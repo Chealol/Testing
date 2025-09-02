@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 import os
+import logging
+
 import requests
 import pandas as pd
 
 from . import FULL_TO_CODE
+from .utils import http
 
 
 def call_the_odds_api_odds(
@@ -37,8 +40,12 @@ def call_the_odds_api_odds(
     if bookmakers:
         params["bookmakers"] = bookmakers
 
-    r = requests.get(url, params=params, timeout=timeout)
-    r.raise_for_status()
+    try:
+        r = http.get(url, params=params, timeout=timeout)
+    except requests.RequestException as exc:
+        logging.error("The Odds API request failed: %s", exc)
+        raise RuntimeError("Failed to fetch odds data") from exc
+
     headers = {
         "x-requests-remaining": r.headers.get("x-requests-remaining"),
         "x-requests-used": r.headers.get("x-requests-used"),
