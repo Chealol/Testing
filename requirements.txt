@@ -1,0 +1,9 @@
+pandas
+numpy
+requests
+python-dotenv
+duckdb
+pyarrow
+tzdata
+openai
+nfl_data_py==0.3.1

@@ -12,37 +12,15 @@ This notebook wires up:
 - **nfl_data_py** for historical data (weekly stats, injuries, depth charts, schedules, scoring lines, NGS summaries)
 - **The Odds API v4** for **h2h**, **spreads**, **totals**
 - **Open‑Meteo** weather (free, **no API key**) via `/v1/forecast` and **Open‑Meteo Geocoding** to resolve city → lat/lon
-- `.env` loader from **/content/drive/MyDrive/NFL_Bot/.env** (must contain `ODDS_API_KEY`)
+- `.env` loader via a configurable path (must contain `ODDS_API_KEY`)
 
 > On game day, check **inactives ~90 minutes before kickoff** (manually or via a paid feed) to finalize decisions.
 """
 
-# === Install dependencies (Colab) ===
-!pip -q install pandas numpy requests python-dotenv duckdb pyarrow tzdata
-!pip install openai
-
-# Commented out IPython magic to ensure Python compatibility.
-# ===== 1) Install/upgrade =====
-# %pip -q install -U nfl_data_py==0.3.1
-
-# === Mount Google Drive and load .env ===
 import os
 from pathlib import Path
 
-def _maybe_mount_drive():
-    try:
-        import google.colab  # type: ignore
-        from google.colab import drive
-        drive.mount('/content/drive', force_remount=False)
-        return True
-    except Exception:
-        return False
-
-_MOUNTED = _maybe_mount_drive()
-ENV_PATH = '/content/drive/MyDrive/NFL_Bot/.env' if _MOUNTED else str(Path.cwd() / '.env')
-
-from dotenv import load_dotenv
-_ = load_dotenv(ENV_PATH)
+from config import DATA_OUT, ENV_PATH
 
 print(f"Loaded .env from: {ENV_PATH}")
 print("Has ODDS_API_KEY:", bool(os.getenv("ODDS_API_KEY")))
@@ -96,10 +74,6 @@ STADIUM_COORDS = {
     'SEA': (47.5952, -122.3316), 'SF': (37.4030, -121.9700), 'TB': (27.9759, -82.5033),
     'TEN': (36.1665, -86.7713), 'WAS': (38.9078, -76.8645), 'WSH': (38.9078, -76.8645),
 }
-
-OUTPUT_BASE = "/content/drive/MyDrive/NFL_Bot"
-DATA_OUT = os.path.join(OUTPUT_BASE, "data")
-os.makedirs(DATA_OUT, exist_ok=True)
 
 
 # =========================
@@ -382,7 +356,7 @@ def expand_weather(bundle: Dict[str, Any]) -> pd.DataFrame:
         w[f'wx_{k}'] = w['weather'].apply(lambda d: d.get(k) if isinstance(d, dict) else None)
     return w
 
-def attach_contexts(bundle, data_root="/content/drive/MyDrive/NFL_Bot/data"):
+def attach_contexts(bundle, data_root=DATA_OUT):
     coach_pq = os.path.join(data_root, "coach_context.parquet")
     ref_pq   = os.path.join(data_root, "ref_context.parquet")
     wk = bundle['schedule'][['game_id']].drop_duplicates()
