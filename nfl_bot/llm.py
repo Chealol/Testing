@@ -26,7 +26,16 @@ def build_game_packets(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Merge implied totals, weather, coach & ref context into JSON packets per game."""
     imp = build_implied_totals(bundle, strict_fanduel=False)
     wx = expand_weather(bundle)[
-        ["home_team", "kickoff", "wx_temp_f", "wx_wind_mph", "wx_precip_prob_pct"]
+        [
+            "home_team",
+            "kickoff",
+            "wx_temp_f",
+            "wx_wind_mph",
+            "wx_precip_prob_pct",
+            "wx_wind_15_plus",
+            "wx_precip_50_plus",
+            "wx_temp_below_32",
+        ]
     ].rename(columns={"home_team": "home_code"})
     coach = bundle.get("coach_ctx", pd.DataFrame())
     refc = bundle.get("ref_ctx", pd.DataFrame())
@@ -129,6 +138,21 @@ def build_game_packets(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "temp_f": _safe(r.get("wx_temp_f")),
                     "wind_mph": _safe(r.get("wx_wind_mph")),
                     "precip_prob_pct": _safe(r.get("wx_precip_prob_pct")),
+                    "wind_15_plus": (
+                        bool(r.get("wx_wind_15_plus"))
+                        if pd.notna(r.get("wx_wind_15_plus"))
+                        else None
+                    ),
+                    "precip_50_plus": (
+                        bool(r.get("wx_precip_50_plus"))
+                        if pd.notna(r.get("wx_precip_50_plus"))
+                        else None
+                    ),
+                    "temp_below_32": (
+                        bool(r.get("wx_temp_below_32"))
+                        if pd.notna(r.get("wx_temp_below_32"))
+                        else None
+                    ),
                 },
                 "referee": {
                     "name": r.get("ref_name"),
@@ -273,7 +297,16 @@ def _limit_context_rows(df: pd.DataFrame, n: int = 8) -> pd.DataFrame:
 def build_qa_context(bundle: dict, question: str) -> dict:
     imp = build_implied_totals(bundle, strict_fanduel=False)
     wx = expand_weather(bundle)[
-        ["home_team", "kickoff", "wx_temp_f", "wx_wind_mph", "wx_precip_prob_pct"]
+        [
+            "home_team",
+            "kickoff",
+            "wx_temp_f",
+            "wx_wind_mph",
+            "wx_precip_prob_pct",
+            "wx_wind_15_plus",
+            "wx_precip_50_plus",
+            "wx_temp_below_32",
+        ]
     ]
     coach = bundle.get("coach_ctx", pd.DataFrame())
     refc = bundle.get("ref_ctx", pd.DataFrame())
@@ -341,6 +374,9 @@ def build_qa_context(bundle: dict, question: str) -> dict:
             "wx_temp_f",
             "wx_wind_mph",
             "wx_precip_prob_pct",
+            "wx_wind_15_plus",
+            "wx_precip_50_plus",
+            "wx_temp_below_32",
             "home_coach",
             "away_coach",
             "neutral_early_down_pass_rate_last4_home",
