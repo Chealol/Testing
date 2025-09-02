@@ -99,6 +99,218 @@ def expand_weather(bundle: Dict[str, Any]) -> pd.DataFrame:
     return w
 
 
+def pressure_delta(bundle: Dict[str, Any]) -> pd.DataFrame:
+    """Compute pass-rush mismatch using pressure rates."""
+    sched = bundle.get("schedule", pd.DataFrame())
+    base = sched[["game_id", "home_team", "away_team"]].rename(
+        columns={"home_team": "home_code", "away_team": "away_code"}
+    )
+    base["pressure_delta_home"] = np.nan
+    base["pressure_delta_away"] = np.nan
+    if sched.empty:
+        return base[["game_id", "pressure_delta_home", "pressure_delta_away"]]
+
+    season = int(sched["season"].dropna().iloc[0])
+    teams = pd.unique(pd.concat([sched["home_team"], sched["away_team"]]).dropna())
+    try:
+        pbp = nfl.import_pbp_data([season])
+    except Exception:
+        return base[["game_id", "pressure_delta_home", "pressure_delta_away"]]
+
+    need = {"posteam", "defteam", "pass_attempt", "was_pressure"}
+    if pbp.empty or not need.issubset(pbp.columns):
+        return base[["game_id", "pressure_delta_home", "pressure_delta_away"]]
+
+    pbp = pbp[(pbp["pass_attempt"] == 1) & (pbp["posteam"].isin(teams) | pbp["defteam"].isin(teams))]
+    if pbp.empty:
+        return base[["game_id", "pressure_delta_home", "pressure_delta_away"]]
+
+    def_pr = pbp.groupby("defteam")["was_pressure"].mean().rename("def_pr")
+    off_pr = pbp.groupby("posteam")["was_pressure"].mean().rename("off_pr")
+    stats = pd.concat([def_pr, off_pr], axis=1).reset_index().rename(columns={"index": "team"})
+
+    base = base.merge(
+        stats.rename(columns={"team": "home_code", "def_pr": "home_def_pr", "off_pr": "home_off_pr"}),
+        on="home_code",
+        how="left",
+    )
+    base = base.merge(
+        stats.rename(columns={"team": "away_code", "def_pr": "away_def_pr", "off_pr": "away_off_pr"}),
+        on="away_code",
+        how="left",
+    )
+    base["pressure_delta_home"] = base["home_def_pr"] - base["away_off_pr"]
+    base["pressure_delta_away"] = base["away_def_pr"] - base["home_off_pr"]
+    return base[["game_id", "pressure_delta_home", "pressure_delta_away"]]
+
+
+def receiver_vs_secondary(bundle: Dict[str, Any]) -> pd.DataFrame:
+    """Combine primary receiver efficiency with opponent coverage stats."""
+    sched = bundle.get("schedule", pd.DataFrame())
+    base = sched[["game_id", "home_team", "away_team"]].rename(
+        columns={"home_team": "home_code", "away_team": "away_code"}
+    )
+    base["home_receiver"] = pd.NA
+    base["away_receiver"] = pd.NA
+    base["rvs_home"] = np.nan
+    base["rvs_away"] = np.nan
+    if sched.empty:
+        return base[["game_id", "home_receiver", "away_receiver", "rvs_home", "rvs_away"]]
+
+    season = int(sched["season"].dropna().iloc[0])
+    teams = pd.unique(pd.concat([sched["home_team"], sched["away_team"]]).dropna())
+    try:
+        pbp = nfl.import_pbp_data([season])
+    except Exception:
+        return base[["game_id", "home_receiver", "away_receiver", "rvs_home", "rvs_away"]]
+
+    need = {"posteam", "defteam", "pass_attempt", "receiver_player_name", "yards_gained"}
+    if pbp.empty or not need.issubset(pbp.columns):
+        return base[["game_id", "home_receiver", "away_receiver", "rvs_home", "rvs_away"]]
+
+    pp = pbp[(pbp["pass_attempt"] == 1) & pbp["posteam"].isin(teams)]
+    if pp.empty:
+        return base[["game_id", "home_receiver", "away_receiver", "rvs_home", "rvs_away"]]
+
+    team_dropbacks = pp.groupby("posteam")["play_id"].count().rename("dropbacks")
+    rec = (
+        pp.groupby(["posteam", "receiver_player_name"])
+        .agg(targets=("play_id", "count"), yards=("yards_gained", "sum"))
+        .reset_index()
+    )
+    rec = rec.merge(team_dropbacks, on="posteam", how="left")
+    rec["tprr"] = rec["targets"] / rec["dropbacks"]
+    rec["yprr"] = rec["yards"] / rec["dropbacks"]
+    top_rec = rec.sort_values(["posteam", "targets"], ascending=[True, False]).drop_duplicates("posteam")
+    def_cov = (
+        pp.groupby("defteam")
+        .agg(yards_allowed=("yards_gained", "sum"), targets=("play_id", "count"))
+        .assign(ypt_allowed=lambda d: d["yards_allowed"] / d["targets"])
+    )
+
+    base = base.merge(
+        top_rec[["posteam", "receiver_player_name", "tprr", "yprr"]].rename(
+            columns={
+                "posteam": "home_code",
+                "receiver_player_name": "home_receiver",
+                "tprr": "home_tprr",
+                "yprr": "home_yprr",
+            }
+        ),
+        on="home_code",
+        how="left",
+    )
+    base = base.merge(
+        top_rec[["posteam", "receiver_player_name", "tprr", "yprr"]].rename(
+            columns={
+                "posteam": "away_code",
+                "receiver_player_name": "away_receiver",
+                "tprr": "away_tprr",
+                "yprr": "away_yprr",
+            }
+        ),
+        on="away_code",
+        how="left",
+    )
+    base = base.merge(
+        def_cov["ypt_allowed"].rename_axis("home_code").reset_index().rename(columns={"ypt_allowed": "home_ypt"}),
+        on="home_code",
+        how="left",
+    )
+    base = base.merge(
+        def_cov["ypt_allowed"].rename_axis("away_code").reset_index().rename(columns={"ypt_allowed": "away_ypt"}),
+        on="away_code",
+        how="left",
+    )
+    base["rvs_home"] = base["home_yprr"] - base["away_ypt"]
+    base["rvs_away"] = base["away_yprr"] - base["home_ypt"]
+    return base[["game_id", "home_receiver", "away_receiver", "rvs_home", "rvs_away"]]
+
+
+def run_fit(bundle: Dict[str, Any]) -> pd.DataFrame:
+    """Mix rush explosiveness allowed with RB efficiency metrics."""
+    sched = bundle.get("schedule", pd.DataFrame())
+    base = sched[["game_id", "home_team", "away_team"]].rename(
+        columns={"home_team": "home_code", "away_team": "away_code"}
+    )
+    base["home_rusher"] = pd.NA
+    base["away_rusher"] = pd.NA
+    base["run_fit_home"] = np.nan
+    base["run_fit_away"] = np.nan
+    if sched.empty:
+        return base[["game_id", "home_rusher", "away_rusher", "run_fit_home", "run_fit_away"]]
+
+    season = int(sched["season"].dropna().iloc[0])
+    teams = pd.unique(pd.concat([sched["home_team"], sched["away_team"]]).dropna())
+
+    try:
+        pbp = nfl.import_pbp_data([season])
+    except Exception:
+        pbp = pd.DataFrame()
+    try:
+        rush = nfl.import_ngs_data("rushing", [season])
+    except Exception:
+        rush = pd.DataFrame()
+
+    need_def = {"posteam", "defteam", "rush_attempt", "yards_gained"}
+    if not pbp.empty and need_def.issubset(pbp.columns):
+        rp = pbp[(pbp["rush_attempt"] == 1) & (pbp["posteam"].isin(teams) | pbp["defteam"].isin(teams))]
+        def_expl = (
+            rp.groupby("defteam")
+            .apply(lambda g: (g["yards_gained"] >= 10).mean())
+            .rename("explosive_rate")
+            .reset_index()
+        )
+    else:
+        def_expl = pd.DataFrame(columns=["defteam", "explosive_rate"])
+
+    if not rush.empty and {"team_abbr", "player_display_name", "rush_attempts", "rush_yards_over_expected_per_att"}.issubset(rush.columns):
+        rb = (
+            rush[rush["team_abbr"].isin(teams)]
+            .sort_values(["team_abbr", "rush_attempts"], ascending=[True, False])
+            .drop_duplicates("team_abbr")
+        )
+        rb = rb[["team_abbr", "player_display_name", "rush_yards_over_expected_per_att"]]
+    else:
+        rb = pd.DataFrame(columns=["team_abbr", "player_display_name", "rush_yards_over_expected_per_att"])
+
+    base = base.merge(
+        rb.rename(
+            columns={
+                "team_abbr": "home_code",
+                "player_display_name": "home_rusher",
+                "rush_yards_over_expected_per_att": "home_rb_ryoe",
+            }
+        ),
+        on="home_code",
+        how="left",
+    )
+    base = base.merge(
+        rb.rename(
+            columns={
+                "team_abbr": "away_code",
+                "player_display_name": "away_rusher",
+                "rush_yards_over_expected_per_att": "away_rb_ryoe",
+            }
+        ),
+        on="away_code",
+        how="left",
+    )
+    base = base.merge(
+        def_expl.rename(columns={"defteam": "home_code", "explosive_rate": "home_def_expl"}),
+        on="home_code",
+        how="left",
+    )
+    base = base.merge(
+        def_expl.rename(columns={"defteam": "away_code", "explosive_rate": "away_def_expl"}),
+        on="away_code",
+        how="left",
+    )
+    base["run_fit_home"] = base["home_rb_ryoe"] - base["away_def_expl"]
+    base["run_fit_away"] = base["away_rb_ryoe"] - base["home_def_expl"]
+    return base[["game_id", "home_rusher", "away_rusher", "run_fit_home", "run_fit_away"]]
+
+
 def attach_contexts(bundle: Dict[str, Any], data_root=DATA_OUT):
     coach_pq = os.path.join(data_root, "coach_context.parquet")
     ref_pq = os.path.join(data_root, "ref_context.parquet")
@@ -299,6 +511,9 @@ __all__ = [
     "pick_bookmaker",
     "build_implied_totals",
     "expand_weather",
+    "pressure_delta",
+    "receiver_vs_secondary",
+    "run_fit",
     "attach_contexts",
     "build_coach_ref_contexts",
 ]

@@ -11,7 +11,13 @@ import numpy as np
 from openai import OpenAI
 
 from . import TEAM_CODE_TO_FULL
-from .features import build_implied_totals, expand_weather
+from .features import (
+    build_implied_totals,
+    expand_weather,
+    pressure_delta,
+    receiver_vs_secondary,
+    run_fit,
+)
 
 client = OpenAI()
 
@@ -27,6 +33,10 @@ def build_game_packets(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
     sched = bundle["schedule"]["game_id season week home_team away_team kickoff".split()].rename(
         columns={"home_team": "home_code", "away_team": "away_code"}
     )
+
+    press = pressure_delta(bundle)
+    rvs = receiver_vs_secondary(bundle)
+    rfit = run_fit(bundle)
 
     if not coach.empty:
         last4 = [c for c in coach.columns if c.endswith("_last4")]
@@ -67,6 +77,9 @@ def build_game_packets(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
         base = base.merge(coach_wide, on="game_id", how="left")
     if not ref_small.empty:
         base = base.merge(ref_small, on="game_id", how="left")
+    for extra in (press, rvs, rfit):
+        if extra is not None and not extra.empty:
+            base = base.merge(extra, on="game_id", how="left")
 
     def _safe(x, nd=3):
         try:
@@ -122,6 +135,32 @@ def build_game_packets(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "penalties_per100_last16": _safe(r.get("penalties_per100_last16")),
                     "dpi_per100_pass_last16": _safe(r.get("dpi_per100_pass_last16")),
                     "off_hold_per100_plays_last16": _safe(r.get("off_hold_per100_plays_last16")),
+                },
+                "matchups": {
+                    "pressure_delta": {
+                        "home": _safe(r.get("pressure_delta_home")),
+                        "away": _safe(r.get("pressure_delta_away")),
+                    },
+                    "receiver_vs_secondary": {
+                        "home": {
+                            "player": (r.get("home_receiver") if pd.notna(r.get("home_receiver")) else None),
+                            "edge": _safe(r.get("rvs_home")),
+                        },
+                        "away": {
+                            "player": (r.get("away_receiver") if pd.notna(r.get("away_receiver")) else None),
+                            "edge": _safe(r.get("rvs_away")),
+                        },
+                    },
+                    "run_fit": {
+                        "home": {
+                            "player": (r.get("home_rusher") if pd.notna(r.get("home_rusher")) else None),
+                            "edge": _safe(r.get("run_fit_home")),
+                        },
+                        "away": {
+                            "player": (r.get("away_rusher") if pd.notna(r.get("away_rusher")) else None),
+                            "edge": _safe(r.get("run_fit_away")),
+                        },
+                    },
                 },
             }
         )
