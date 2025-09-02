@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from typing import Optional
+import logging
+
 import pandas as pd
 import requests
 
 from . import STADIUM_COORDS
+from .utils import http
 
 
 def om_forecast_near_kickoff(
@@ -26,10 +29,11 @@ def om_forecast_near_kickoff(
         "wind_speed_unit": "mph",
         "timezone": "auto",
     }
-    r = requests.get(base, params=params, timeout=timeout)
-    if r.status_code != 200:
-        print("Open-Meteo error:", r.status_code, r.text[:160])
-        return None
+    try:
+        r = http.get(base, params=params, timeout=timeout)
+    except requests.RequestException as exc:
+        logging.error("Open-Meteo request failed: %s", exc)
+        raise RuntimeError("Failed to fetch Open-Meteo forecast") from exc
     js = r.json() or {}
     hourly = js.get("hourly") or {}
     times = hourly.get("time") or []
