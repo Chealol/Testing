@@ -5,6 +5,7 @@ from typing import Dict, Any
 import os
 import re
 import datetime as dt
+import logging
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,8 @@ from . import TEAM_CODE_TO_FULL
 from config import DATA_OUT
 from .data import _concat_per_year_safely
 from .weather import weather_flags
+
+logger = logging.getLogger(__name__)
 
 PREFERRED_BOOKS = (
     "fanduel",
@@ -350,7 +353,7 @@ def build_coach_ref_contexts(years_back: int = 4):
     try:
         officials = _concat_per_year_safely(nfl.import_officials, YEARS_TEND, "officials")
     except Exception as e:
-        print("officials: not available ->", e)
+        logger.warning("officials: not available -> %s", e)
         officials = pd.DataFrame(columns=["game_id"])
 
     def prep_pbp(df: pd.DataFrame) -> pd.DataFrame:
@@ -497,7 +500,7 @@ def build_coach_ref_contexts(years_back: int = 4):
     coach_ctx = coach_df.merge(tw_roll, on=["season", "week", "team"], how="left")
     coach_out = os.path.join(DATA_OUT, "coach_context.parquet")
     coach_ctx.to_parquet(coach_out, index=False)
-    print("[write]", coach_out, "rows=", len(coach_ctx))
+    logger.info("[write] %s rows=%s", coach_out, len(coach_ctx))
 
     if officials.empty:
         ref_ctx = pd.DataFrame()
@@ -514,7 +517,7 @@ def build_coach_ref_contexts(years_back: int = 4):
         ref_ctx = ref_games[ref_cols].copy()
     ref_out = os.path.join(DATA_OUT, "ref_context.parquet")
     ref_ctx.to_parquet(ref_out, index=False)
-    print("[write]", ref_out, "rows=", len(ref_ctx))
+    logger.info("[write] %s rows=%s", ref_out, len(ref_ctx))
 
     return {"coach_ctx": coach_ctx, "ref_ctx": ref_ctx, "coach_path": coach_out, "ref_path": ref_out}
 

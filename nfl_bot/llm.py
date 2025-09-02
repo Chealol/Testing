@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 import json
 import os
 import re
+import logging
 
 import pandas as pd
 import numpy as np
@@ -18,6 +19,8 @@ from .features import (
     receiver_vs_secondary,
     run_fit,
 )
+
+logger = logging.getLogger(__name__)
 
 client = OpenAI()
 
@@ -270,7 +273,7 @@ def llm_picks_via_responses(
     df = pd.DataFrame(all_picks)
     if debug:
         for k, snip in enumerate(raw_snips):
-            print(f"--- Chunk {k} ---\n{snip}\n")
+            logger.debug("--- Chunk %s ---\n%s\n", k, snip)
     if df.empty:
         return df
     order = ["game_id", "market", "selection", "confidence", "units", "edge_note"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import List, Dict, Any, Optional
 import os
+import logging
 
 import pandas as pd
 import numpy as np
@@ -13,6 +14,8 @@ from . import TEAM_CODE_TO_FULL, FULL_TO_CODE, STADIUM_COORDS
 from .odds import call_the_odds_api_odds, flatten_odds_events, map_events_to_codes
 from .weather import open_meteo_for_game
 from .inactives import read_inactives
+
+logger = logging.getLogger(__name__)
 
 
 def _concat_per_year_safely(import_fn, years: List[int], label: str) -> pd.DataFrame:
@@ -25,12 +28,12 @@ def _concat_per_year_safely(import_fn, years: List[int], label: str) -> pd.DataF
                 frames.append(df)
                 used.append(y)
         except Exception as e:  # pragma: no cover - passthrough logging
-            print(f"{label}: skipping {y} -> {type(e).__name__}: {e}")
+            logger.warning("%s: skipping %s -> %s: %s", label, y, type(e).__name__, e)
     if frames:
         out = pd.concat(frames, ignore_index=True)
-        print(f"{label}: loaded years {used}")
+        logger.info("%s: loaded years %s", label, used)
         return out
-    print(f"{label}: no data loaded for {years}")
+    logger.info("%s: no data loaded for %s", label, years)
     return pd.DataFrame()
 
 
@@ -47,7 +50,7 @@ def load_core_data(years: List[int]) -> Dict[str, pd.DataFrame]:
             fn = lambda ys, s=stat: nfl.import_ngs_data(s, ys)
             data[f"ngs_{stat}"] = _concat_per_year_safely(fn, years, f"ngs_{stat}")
         except Exception as e:  # pragma: no cover - network errors
-            print(f"ngs_{stat}: error -> {e}")
+            logger.warning("ngs_%s: error -> %s", stat, e)
             data[f"ngs_{stat}"] = pd.DataFrame()
     return data
 
