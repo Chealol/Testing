@@ -14,6 +14,7 @@ import nfl_data_py as nfl
 from . import TEAM_CODE_TO_FULL
 from config import DATA_OUT
 from .data import _concat_per_year_safely
+from .weather import weather_flags
 
 PREFERRED_BOOKS = (
     "fanduel",
@@ -96,6 +97,18 @@ def expand_weather(bundle: Dict[str, Any]) -> pd.DataFrame:
     w = bundle["weather_by_game"].copy()
     for k in ["temp_f", "wind_mph", "precip_prob_pct", "time_near_kickoff", "lat", "lon"]:
         w[f"wx_{k}"] = w["weather"].apply(lambda d: d.get(k) if isinstance(d, dict) else None)
+
+    flags = weather_flags(
+        w[["wx_temp_f", "wx_wind_mph", "wx_precip_prob_pct"]].rename(
+            columns={
+                "wx_temp_f": "temp_f",
+                "wx_wind_mph": "wind_mph",
+                "wx_precip_prob_pct": "precip_prob_pct",
+            }
+        )
+    )
+    for c in ["wind_15_plus", "precip_50_plus", "temp_below_32"]:
+        w[f"wx_{c}"] = flags[c]
     return w
 
 

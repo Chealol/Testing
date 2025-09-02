@@ -70,4 +70,41 @@ def open_meteo_for_game(home_code: str, kickoff_ts: Optional[pd.Timestamp]) -> O
     return om_forecast_near_kickoff(lat, lon, kickoff_ts)
 
 
-__all__ = ["om_forecast_near_kickoff", "open_meteo_for_game"]
+def weather_flags(df: pd.DataFrame) -> pd.DataFrame:
+    """Add simple boolean weather flags to a DataFrame.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with columns ``temp_f``, ``wind_mph`` and ``precip_prob_pct``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Copy of ``df`` with boolean columns:
+
+        * ``wind_15_plus`` – wind speed at or above 15 mph
+        * ``precip_50_plus`` – precipitation probability at or above 50%
+        * ``temp_below_32`` – temperature below freezing (32°F)
+    """
+
+    out = df.copy()
+    if "wind_mph" in out.columns:
+        out["wind_15_plus"] = out["wind_mph"].ge(15)
+    else:
+        out["wind_15_plus"] = pd.NA
+
+    if "precip_prob_pct" in out.columns:
+        out["precip_50_plus"] = out["precip_prob_pct"].ge(50)
+    else:
+        out["precip_50_plus"] = pd.NA
+
+    if "temp_f" in out.columns:
+        out["temp_below_32"] = out["temp_f"].lt(32)
+    else:
+        out["temp_below_32"] = pd.NA
+
+    return out
+
+
+__all__ = ["om_forecast_near_kickoff", "open_meteo_for_game", "weather_flags"]
