@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from . import TEAM_CODE_TO_FULL, FULL_TO_CODE, STADIUM_COORDS
 from .odds import call_the_odds_api_odds, flatten_odds_events, map_events_to_codes
 from .weather import open_meteo_for_game
+from .inactives import read_inactives
 
 
 def _concat_per_year_safely(import_fn, years: List[int], label: str) -> pd.DataFrame:
@@ -135,6 +136,7 @@ def get_week_bundle(season: int, week: int, years_back: int = 3, fd_only_fetch: 
         "odds_headers": headers,
         "weather_by_game": pd.DataFrame(weather_rows),
     }
+    bundle = read_inactives(bundle)
     return bundle
 
 
